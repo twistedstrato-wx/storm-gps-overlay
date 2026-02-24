@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Storm Chase GPS Overlay</title>
+
+<style>
+body {
+    margin: 0;
+    background: rgba(0,0,0,0);
+    font-family: Arial, sans-serif;
+    color: white;
+    font-weight: bold;
+}
+
+.container {
+    background: rgba(0,0,0,0.65);
+    padding: 18px 22px;
+    border-radius: 12px;
+    width: fit-content;
+    min-width: 350px;
+}
+
+.label {
+    color: #00ffcc;
+}
+
+.row {
+    margin-bottom: 6px;
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+    <div class="row"><span class="label">Location:</span> <span id="town">--</span></div>
+    <div class="row"><span class="label">County:</span> <span id="county">--</span></div>
+    <div class="row"><span class="label">Lat/Lon:</span> <span id="latlon">--</span></div>
+    <div class="row"><span class="label">Speed:</span> <span id="speed">--</span> mph</div>
+    <div class="row"><span class="label">Heading:</span> <span id="heading">--</span></div>
+</div>
+
+<script>
+let lastLookupTime = 0;
+let lastLat = null;
+let lastLon = null;
+
+function getCompassDirection(degrees) {
+    if (degrees === null) return "--";
+    const dirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE",
+                  "S","SSW","SW","WSW","W","WNW","NW","NNW"];
+    return dirs[Math.round(degrees / 22.5) % 16];
+}
+
+async function reverseGeocode(lat, lon) {
+    try {
+        const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`
+        );
+        const data = await response.json();
+
+        const address = data.address;
+
+        document.getElementById("county").textContent =
+            address.county || "--";
+
+        document.getElementById("town").textContent =
+            address.city ||
+            address.town ||
+            address.village ||
+            address.hamlet ||
+            "--";
+    } catch (err) {
+        console.log("Geocode error:", err);
+    }
+}
+
+function updatePosition(position) {
+    const lat = position.coords.latitude;
+    const lon = position.coords.longitude;
+
+    document.getElementById("latlon").textContent =
+        lat.toFixed(5) + ", " + lon.toFixed(5);
+
+    // Speed conversion m/s → mph
+    let speed = position.coords.speed;
+    if (speed !== null) {
+        speed = (speed * 2.23694).toFixed(1);
+    } else {
+        speed = "0.0";
+    }
+    document.getElementById("speed").textContent = speed;
+
+    // Heading + compass
+    const headingDeg = position.coords.heading;
+    if (headingDeg !== null) {
+        const compass = getCompassDirection(headingDeg);
+        document.getElementById("heading").textContent =
+            headingDeg.toFixed(0) + "° " + compass;
+    } else {
+        document.getElementById("heading").textContent = "--";
+    }
+
+    // Only lookup town/county every 30 seconds OR if moved significantly
+    const now = Date.now();
+    if (
+        !lastLat ||
+        Math.abs(lat - lastLat) > 0.02 ||
+        Math.abs(lon - lastLon) > 0.02 ||
+        now - lastLookupTime > 30000
+    ) {
+        reverseGeocode(lat, lon);
+        lastLookupTime = now;
+        lastLat = lat;
+        lastLon = lon;
+    }
+}
+
+function showError(error) {
+    alert("GPS error: " + error.message);
+}
+
+if ("geolocation" in navigator) {
+    navigator.geolocation.watchPosition(updatePosition, showError, {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 5000
+    });
+} else {
+    alert("Geolocation not supported.");
+}
+</script>
+
+</body>
+</html>
